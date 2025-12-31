@@ -1,0 +1,92 @@
+{
+  "name": "task_escalation_workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "task-escalation",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "id": "escalation-webhook",
+      "name": "Escalation Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced escalation processing for blocked tasks and overdue tasks\nconst { task_id, onboarding_id, blocker_reason, task_type, owner_role, customer_name, stakeholders = [] } = $input.all()[0].json;\n\n// Determine escalation recipients based on owner role\nconst escalationMap = {\n  'it_contact': ['technical_lead', 'project_manager'],\n  'technical_lead': ['project_manager', 'owner'],\n  'project_manager': ['owner'],\n  'owner': ['project_manager'], // Escalate back to PM for resolution support\n};\n\nconst escalateTo = escalationMap[owner_role] || ['project_manager'];\n\n// Determine urgency based on task type\nlet urgencyLevel = 'medium';\nif (task_type.includes('security') || task_type.includes('sis_setup')) {\n  urgencyLevel = 'critical';\n} else if (task_type.includes('setup') || task_type.includes('go_live') || task_type.includes('kickoff')) {\n  urgencyLevel = 'high';\n}\n\n// Find actual stakeholder emails for escalation\nconst escalationRecipients = [];\nfor (const role of escalateTo) {\n  const stakeholder = stakeholders.find(s => s.role === role);\n  if (stakeholder) {\n    escalationRecipients.push({\n      task_id,\n      onboarding_id,\n      blocker_reason,\n      task_type,\n      owner_role,\n      customer_name,\n      recipient_role: role,\n      recipient_email: stakeholder.email,\n      recipient_name: stakeholder.name,\n      escalation_level: escalateTo.includes('owner') ? 'high' : 'medium',\n      urgency_level: urgencyLevel,\n      escalation_type: blocker_reason ? 'blocker' : 'overdue',\n      created_at: new Date().toISOString()\n    });\n  }\n}\n\nreturn escalationRecipients;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 0],
+      "id": "escalation-processor",
+      "name": "Process Escalation"
+    },
+    {
+      "parameters": {
+        "tableId": "events_audit",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "entity_type",
+              "fieldValue": "escalation"
+            },
+            {
+              "fieldId": "entity_id",
+              "fieldValue": "={{ $json.task_id }}"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "={{ $json.escalation_type === 'blocker' ? 'blocker_escalated' : 'task_escalated' }}"
+            },
+            {
+              "fieldId": "metadata",
+              "fieldValue": "={{ { \"blocker_reason\": $json.blocker_reason, \"escalated_to\": $json.recipient_email, \"escalation_level\": $json.escalation_level, \"urgency_level\": $json.urgency_level, \"customer_name\": $json.customer_name } }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [400, 0],
+      "id": "log-escalation",
+      "name": "Log Escalation",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0yeLXn4fhwRcx0HQ",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Escalation Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Escalation": {
+      "main": [
+        [
+          {
+            "node": "Log Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

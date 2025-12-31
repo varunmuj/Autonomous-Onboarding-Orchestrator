@@ -1,0 +1,132 @@
+{
+  "name": "task_notification_workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "task-notification",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "id": "notification-webhook",
+      "name": "Notification Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced notification content generation for multiple notification types\nconst input = $input.all()[0].json;\nconst { type, task_id, assigned_to, task_title, priority, due_date, recipients, subject, message, urgency, metadata } = input;\n\nif (type === 'task_assigned') {\n  const urgencyMap = {\n    'low': 'Low',\n    'medium': 'Medium',\n    'high': 'High',\n    'critical': 'CRITICAL'\n  };\n  \n  const urgency = urgencyMap[priority] || 'Medium';\n  const dueDateStr = due_date ? new Date(due_date).toLocaleDateString() : 'Not specified';\n  \n  return [{\n    to: assigned_to,\n    subject: `[${urgency}] New Task Assignment: ${task_title}`,\n    message: `You have been assigned a new onboarding task:\\n\\nTask: ${task_title}\\nPriority: ${urgency}\\nDue Date: ${dueDateStr}\\n\\nPlease log into the onboarding dashboard to view full details.`,\n    task_id,\n    urgency: priority,\n    notification_type: type\n  }];\n} else if (type === 'blocker_created' || type === 'task_escalated' || type === 'task_reminder' || type === 'blocker_resolved') {\n  // Handle notifications from the notification system\n  const notifications = [];\n  \n  if (recipients && Array.isArray(recipients)) {\n    for (const recipient of recipients) {\n      notifications.push({\n        to: recipient,\n        subject: subject || `[${urgency?.toUpperCase()}] Onboarding Notification`,\n        message: message || 'Please check the onboarding dashboard for details.',\n        task_id,\n        urgency: urgency || 'medium',\n        notification_type: type,\n        metadata: metadata || {}\n      });\n    }\n  }\n  \n  return notifications.length > 0 ? notifications : [{ skip: true, reason: 'No valid recipients' }];\n}\n\nreturn [{ skip: true, reason: 'Unknown notification type' }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [200, 0],
+      "id": "notification-processor",
+      "name": "Process Notification"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "notification-condition",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [400, 0],
+      "id": "notification-filter",
+      "name": "Should Send Notification"
+    },
+    {
+      "parameters": {
+        "tableId": "events_audit",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "entity_type",
+              "fieldValue": "notification"
+            },
+            {
+              "fieldId": "entity_id",
+              "fieldValue": "={{ $json.task_id }}"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "={{ $json.notification_type + '_notification_sent' }}"
+            },
+            {
+              "fieldId": "metadata",
+              "fieldValue": "={{ { \"to\": $json.to, \"subject\": $json.subject, \"urgency\": $json.urgency, \"notification_type\": $json.notification_type } }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [600, 0],
+      "id": "log-notification",
+      "name": "Log Notification",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0yeLXn4fhwRcx0HQ",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Notification Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Notification": {
+      "main": [
+        [
+          {
+            "node": "Should Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send Notification": {
+      "main": [
+        [
+          {
+            "node": "Log Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

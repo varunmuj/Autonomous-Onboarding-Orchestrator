@@ -1,12 +1,29 @@
 {
-  "name": "projects",
-  "version": "0.1.0",
+  "name": "airr-autonomous-onboarding-orchestrator",
+  "version": "3.0.0",
+  "description": "Airr 3.0 - Production-ready autonomous onboarding system with state-driven workflows, real-time visibility, and intelligent orchestration",
   "private": true,
+  "keywords": [
+    "onboarding",
+    "orchestration",
+    "automation",
+    "workflow",
+    "supabase",
+    "n8n",
+    "property-based-testing"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --run --coverage",
+    "test:pbt": "vitest --run --grep 'Property'",
+    "db:migrate": "echo 'Apply supabase/migrations.sql to your Supabase instance'",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
@@ -18,8 +35,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/ui": "^4.0.16",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
-    "typescript": "^5"
+    "fast-check": "^4.5.3",
+    "typescript": "^5",
+    "vitest": "^4.0.16"
   }
 }

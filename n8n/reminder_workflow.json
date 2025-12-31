@@ -1,0 +1,319 @@
+{
+  "name": "task_reminder_workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "id": "reminder-cron",
+      "name": "Daily Reminder Check"
+    },
+    {
+      "parameters": {
+        "tableId": "onboarding_tasks",
+        "filterType": "string",
+        "filterString": "status IN ('pending', 'in_progress') AND due_date IS NOT NULL",
+        "fieldsToReturn": "id,onboarding_id,task_type,title,description,owner_role,assigned_to,status,priority,due_date,created_at"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [200, 0],
+      "id": "get-active-tasks",
+      "name": "Get Active Tasks",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0yeLXn4fhwRcx0HQ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter tasks that need reminders (due in 1-2 days)\nconst tasks = $input.all()[0].json;\nconst now = new Date();\nconst reminderTasks = [];\n\nfor (const task of tasks) {\n  if (!task.due_date) continue;\n  \n  const dueDate = new Date(task.due_date);\n  const daysUntilDue = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));\n  \n  // Send reminders for tasks due in 1-2 days\n  if (daysUntilDue >= 0 && daysUntilDue <= 2) {\n    reminderTasks.push({\n      ...task,\n      days_until_due: daysUntilDue,\n      reminder_type: daysUntilDue === 0 ? 'due_today' : \n                     daysUntilDue === 1 ? 'due_tomorrow' : 'due_soon'\n    });\n  }\n}\n\nreturn reminderTasks;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 0],
+      "id": "filter-reminder-tasks",
+      "name": "Filter Reminder Tasks"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-tasks-condition",
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [600, 0],
+      "id": "has-reminder-tasks",
+      "name": "Has Reminder Tasks"
+    },
+    {
+      "parameters": {
+        "tableId": "stakeholders",
+        "filterType": "string",
+        "filterString": "onboarding_id = {{ $json.onboarding_id }}",
+        "fieldsToReturn": "id,role,name,email,onboarding_id"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [800, 0],
+      "id": "get-stakeholders",
+      "name": "Get Stakeholders",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0yeLXn4fhwRcx0HQ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getRow",
+        "tableId": "onboardings",
+        "filterType": "string",
+        "filterString": "id = {{ $json.onboarding_id }}",
+        "fieldsToReturn": "id,customer_id"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1000, 0],
+      "id": "get-onboarding",
+      "name": "Get Onboarding",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0yeLXn4fhwRcx0HQ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getRow",
+        "tableId": "customers",
+        "filterType": "string",
+        "filterString": "id = {{ $json.customer_id }}",
+        "fieldsToReturn": "id,name"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1200, 0],
+      "id": "get-customer",
+      "name": "Get Customer",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0yeLXn4fhwRcx0HQ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare reminder notification data\nconst taskData = $input.first().json;\nconst stakeholders = $input.itemMatching(1).json;\nconst customer = $input.last().json;\n\n// Find the assigned stakeholder or fallback to role-based assignment\nlet recipient = null;\n\nif (taskData.assigned_to) {\n  recipient = stakeholders.find(s => s.email === taskData.assigned_to);\n}\n\nif (!recipient) {\n  recipient = stakeholders.find(s => s.role === taskData.owner_role);\n}\n\nif (!recipient) {\n  // Fallback to project manager\n  recipient = stakeholders.find(s => s.role === 'project_manager');\n}\n\nif (!recipient) {\n  return [{ skip: true, reason: 'No valid recipient found' }];\n}\n\nconst urgency = taskData.days_until_due === 0 ? 'high' : 'medium';\nconst dueDateText = taskData.days_until_due === 0 ? 'today' : \n                   taskData.days_until_due === 1 ? 'tomorrow' : \n                   `in ${taskData.days_until_due} days`;\n\nreturn [{\n  task_id: taskData.id,\n  onboarding_id: taskData.onboarding_id,\n  customer_name: customer.name,\n  task_title: taskData.title,\n  task_type: taskData.task_type,\n  priority: taskData.priority,\n  due_date: taskData.due_date,\n  days_until_due: taskData.days_until_due,\n  reminder_type: taskData.reminder_type,\n  recipient_email: recipient.email,\n  recipient_name: recipient.name,\n  recipient_role: recipient.role,\n  urgency,\n  subject: `[REMINDER] Task Due ${dueDateText}: ${taskData.title} - ${customer.name}`,\n  message: `TASK REMINDER - DUE ${dueDateText.toUpperCase()}\\n\\nCustomer: ${customer.name}\\nTask: ${taskData.title}\\nType: ${taskData.task_type}\\nPriority: ${taskData.priority?.toUpperCase()}\\nDue Date: ${new Date(taskData.due_date).toLocaleDateString()}\\n\\nThis task is due ${dueDateText}. Please ensure it is completed on time to maintain the customer's onboarding schedule.\\n\\nPlease log into the onboarding dashboard to update the task status.\\n\\nAirr 3.0 Onboarding System`\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 0],
+      "id": "prepare-reminder",
+      "name": "Prepare Reminder"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should-send-condition",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1600, 0],
+      "id": "should-send-reminder",
+      "name": "Should Send Reminder"
+    },
+    {
+      "parameters": {
+        "tableId": "events_audit",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "entity_type",
+              "fieldValue": "reminder"
+            },
+            {
+              "fieldId": "entity_id",
+              "fieldValue": "={{ $json.task_id }}"
+            },
+            {
+              "fieldId": "event_type",
+              "fieldValue": "task_reminder_sent"
+            },
+            {
+              "fieldId": "metadata",
+              "fieldValue": "={{ { \"recipient\": $json.recipient_email, \"reminder_type\": $json.reminder_type, \"days_until_due\": $json.days_until_due, \"customer_name\": $json.customer_name } }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1800, 0],
+      "id": "log-reminder",
+      "name": "Log Reminder",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0yeLXn4fhwRcx0HQ",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Reminder Check": {
+      "main": [
+        [
+          {
+            "node": "Get Active Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Tasks": {
+      "main": [
+        [
+          {
+            "node": "Filter Reminder Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Reminder Tasks": {
+      "main": [
+        [
+          {
+            "node": "Has Reminder Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Reminder Tasks": {
+      "main": [
+        [
+          {
+            "node": "Get Stakeholders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Stakeholders": {
+      "main": [
+        [
+          {
+            "node": "Get Onboarding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Onboarding": {
+      "main": [
+        [
+          {
+            "node": "Get Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Customer": {
+      "main": [
+        [
+          {
+            "node": "Prepare Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Reminder": {
+      "main": [
+        [
+          {
+            "node": "Should Send Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send Reminder": {
+      "main": [
+        [
+          {
+            "node": "Log Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
