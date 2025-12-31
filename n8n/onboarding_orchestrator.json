@@ -1,0 +1,191 @@
+{
+  "name": "onboarding_orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "onboarding-created",
+        "responseMode": "=onReceived",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1a7491f6-5991-4bae-805e-5091f8176a4e",
+      "name": "Webhook",
+      "webhookId": "e4209c2e-ee7a-4f15-9256-8b1091c92a5b"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    task_type: \"integration_setup\",\n    owner_role: \"engineering\",\n    due_days: 3\n  },\n  {\n    task_type: \"data_validation\",\n    owner_role: \"qa\",\n    due_days: 5\n  },\n  {\n    task_type: \"configuration\",\n    owner_role: \"product\",\n    due_days: 7\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "9a2a6a56-12a8-43ca-b741-56456949404a",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "tableId": "onboarding_tasks",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "onboarding_id",
+              "fieldValue": "={{$json[\"onboarding_id\"]}}"
+            },
+            {
+              "fieldId": "task_type",
+              "fieldValue": "={{$json[\"task_type\"]}}"
+            },
+            {
+              "fieldId": "owner_role",
+              "fieldValue": "={{$json[\"owner_role\"]}}"
+            },
+            {
+              "fieldId": "due_date",
+              "fieldValue": "={{ new Date(Date.now() + $json.due_days * 86400000).toISOString().slice(0,10) }}\n"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "56edceb0-3ce5-4fea-8838-30af12d29ab1",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0yeLXn4fhwRcx0HQ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "onboardings",
+        "filterType": "string",
+        "filterString": "=id = {{$json[\"onboarding_id\"]}}",
+        "dataToSend": "autoMapInputData"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        624,
+        0
+      ],
+      "id": "fcf9862a-e217-4533-af2e-71e8517a2cf5",
+      "name": "Update a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0yeLXn4fhwRcx0HQ",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "events_audit",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "entity_type",
+              "fieldValue": "onboarding"
+            },
+            {
+              "fieldId": "entity_id",
+              "fieldValue": "={{$json[\"onboarding_id\"]}}"
+            },
+            {
+              "fieldId": "entity_type",
+              "fieldValue": "tasks_generated"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        832,
+        0
+      ],
+      "id": "9c2f13b8-8fd4-4c5d-8851-bc968b9e9a87",
+      "name": "Create a row1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "0yeLXn4fhwRcx0HQ",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row": {
+      "main": [
+        [
+          {
+            "node": "Update a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update a row": {
+      "main": [
+        [
+          {
+            "node": "Create a row1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "5e5a20b7-e841-4b42-b51b-69c37cd8c7da",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7d3070119332145168d9226ce01d49a6e327301522e868e19a14068593b5e0e1"
+  },
+  "id": "QMjw8E6fWKSgIrxm",
+  "tags": []
+}
