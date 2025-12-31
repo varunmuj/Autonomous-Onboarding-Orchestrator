@@ -1,66 +1,76 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
+
+import { useState } from "react";
 
 export default function Home() {
+  const [customerName, setCustomerName] = useState("");
+  const [contractDate, setContractDate] = useState("");
+  const [message, setMessage] = useState("");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setMessage("Creating onboarding...");
+
+    const res = await fetch("/api/onboarding", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        customer_name: customerName,
+        contract_start_date: contractDate,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      setMessage(`Onboarding created: ${data.onboarding_id}`);
+      setCustomerName("");
+      setContractDate("");
+    } else {
+      setMessage("Error creating onboarding");
+    }
+  }
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main style={{ padding: "40px", maxWidth: "500px" }}>
+      <h2>New Customer Onboarding</h2>
+
+      <form onSubmit={handleSubmit}>
+        <div>
+          <label>Customer Name</label>
+          <br />
+          <input
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            required
+          />
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <br />
+
+        <div>
+          <label>Contract Start Date</label>
+          <br />
+          <input
+            type="date"
+            value={contractDate}
+            onChange={(e) => setContractDate(e.target.value)}
+            required
+          />
         </div>
-      </main>
-    </div>
+
+        <br />
+
+        <button type="submit">Start Onboarding</button>
+      </form>
+
+      <br />
+
+      {message && <p>{message}</p>}
+    </main>
   );
 }
+
+
