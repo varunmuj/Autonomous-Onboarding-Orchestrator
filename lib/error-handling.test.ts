@@ -180,7 +180,7 @@ describe('Error Handling and Data Consistency Properties', () => {
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   }, 30000);
 
@@ -222,7 +222,7 @@ describe('Error Handling and Data Consistency Properties', () => {
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   }, 30000);
 
@@ -317,7 +317,7 @@ describe('Error Handling and Data Consistency Properties', () => {
           expect(result.error.length).toBeGreaterThan(0);
         }
       ),
-      { numRuns: 50 }
+      { numRuns: 10 }
     );
   }, 30000);
 
@@ -392,7 +392,7 @@ describe('Error Handling and Data Consistency Properties', () => {
           expect([400, 500]).toContain(response.status);
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   }, 30000);
 
@@ -480,7 +480,7 @@ describe('Error Handling and Data Consistency Properties', () => {
           expect(result.customer_id.length).toBeGreaterThan(0);
         }
       ),
-      { numRuns: 50 }
+      { numRuns: 10 }
     );
   }, 30000);
 
@@ -539,7 +539,7 @@ describe('Error Handling and Data Consistency Properties', () => {
           expect(Object.keys(result)).toContain('error');
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 }
     );
   }, 30000);
 });

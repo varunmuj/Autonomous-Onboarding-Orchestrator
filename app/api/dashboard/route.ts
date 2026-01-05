@@ -1,13 +1,110 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { DEMO_MODE, getDemoDashboardData } from "@/lib/demo-data";
 
-const supabase = createClient(
+// Only create Supabase client if not in demo mode
+const supabase = !DEMO_MODE ? createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+) : null;
 
 export async function GET(): Promise<NextResponse> {
   try {
+    // Demo mode - use mock data
+    if (DEMO_MODE) {
+      console.log("🎭 Demo Mode: Using mock dashboard data");
+      const demoData = getDemoDashboardData();
+      
+      // Calculate demo metrics
+      const totalOnboardings = demoData.length;
+      const activeOnboardings = demoData.filter(o => o.status === 'in_progress').length;
+      const blockedOnboardings = demoData.filter(o => o.status === 'blocked').length;
+      const completedOnboardings = demoData.filter(o => o.status === 'completed').length;
+
+      // Calculate average time to value for completed onboardings
+      const completedWithTimeToValue = demoData.filter(o => 
+        o.status === 'completed' && o.time_to_value_days
+      );
+      
+      const avgTimeToValue = completedWithTimeToValue.length > 0 
+        ? Math.round(
+            completedWithTimeToValue.reduce((sum, o) => sum + (o.time_to_value_days || 0), 0) / 
+            completedWithTimeToValue.length
+          )
+        : null;
+
+      // Count total tasks and blockers
+      const allTasks = demoData.flatMap(o => o.onboarding_tasks || []);
+      const totalTasks = allTasks.length;
+      const completedTasks = allTasks.filter(t => t.status === 'completed').length;
+      const blockedTasks = allTasks.filter(t => t.is_blocker).length;
+
+      // Count integrations by status
+      const allIntegrations = demoData.flatMap(o => o.integrations || []);
+      const integrationsByStatus = {
+        not_configured: allIntegrations.filter(i => i.status === 'not_configured').length,
+        configured: allIntegrations.filter(i => i.status === 'configured').length,
+        testing: allIntegrations.filter(i => i.status === 'testing').length,
+        active: allIntegrations.filter(i => i.status === 'active').length,
+        failed: allIntegrations.filter(i => i.status === 'failed').length,
+      };
+
+      // Identify at-risk onboardings
+      const now = new Date();
+      const atRiskOnboardings = demoData.filter(o => {
+        if (o.status === 'blocked') return true;
+        if (o.go_live_date && new Date(o.go_live_date) < now && o.status !== 'completed') return true;
+        return false;
+      });
+
+      const dashboardData = {
+        summary: {
+          totalOnboardings,
+          activeOnboardings,
+          blockedOnboardings,
+          completedOnboardings,
+          avgTimeToValue,
+          completionRate: totalOnboardings > 0 ? 
+            Math.round((completedOnboardings / totalOnboardings) * 100) : 0
+        },
+        tasks: {
+          totalTasks,
+          completedTasks,
+          blockedTasks,
+          completionRate: totalTasks > 0 ? 
+            Math.round((completedTasks / totalTasks) * 100) : 0
+        },
+        integrations: {
+          total: allIntegrations.length,
+          byStatus: integrationsByStatus
+        },
+        activity: {
+          recentOnboardings: 1,
+          recentCompletions: 1
+        },
+        alerts: {
+          atRiskCount: atRiskOnboardings.length,
+          atRiskOnboardings: atRiskOnboardings.map(o => ({
+            id: o.id,
+            customerName: (o.customers as any)?.name || 'Unknown',
+            status: o.status,
+            daysOverdue: o.go_live_date ? 
+              Math.ceil((now.getTime() - new Date(o.go_live_date).getTime()) / (1000 * 60 * 60 * 24)) : 0
+          }))
+        },
+        onboardings: demoData
+      };
+
+      return NextResponse.json(dashboardData);
+    }
+
+    // Production mode - use Supabase
+    if (!supabase) {
+      return NextResponse.json(
+        { error: "Database not configured" },
+        { status: 500 }
+      );
+    }
     // Get comprehensive dashboard data
     const { data: onboardings, error: onboardingsError } = await supabase
       .from("onboardings")

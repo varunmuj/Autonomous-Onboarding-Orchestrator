@@ -8,12 +8,13 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { EventsAudit } from "./types";
+import { DEMO_MODE } from "./demo-data";
 
-// Initialize Supabase client for audit operations
-const supabase = createClient(
+// Initialize Supabase client for audit operations only if not in demo mode
+const supabase = !DEMO_MODE ? createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+) : null;
 
 /**
  * Audit event types for different system operations
@@ -195,6 +196,28 @@ export async function createAuditRecord(record: CreateAuditRecord): Promise<Even
  */
 export async function createAuditRecords(records: CreateAuditRecord[]): Promise<EventsAudit[]> {
   try {
+    // Demo mode - just log and return mock records
+    if (DEMO_MODE) {
+      console.log("🎭 Demo Mode: Audit records created (simulated):", records.length);
+      return records.map((record, index) => ({
+        id: `audit-${Date.now()}-${index}`,
+        entity_type: record.entity_type,
+        entity_id: record.entity_id,
+        event_type: record.event_type,
+        metadata: {
+          ...record.metadata,
+          timestamp: new Date().toISOString(),
+          system_version: process.env.npm_package_version || 'unknown',
+          environment: process.env.NODE_ENV || 'development',
+        },
+        created_at: new Date().toISOString()
+      }));
+    }
+
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
     const enhancedRecords = records.map(record => ({
       entity_type: record.entity_type,
       entity_id: record.entity_id,
@@ -229,6 +252,16 @@ export async function createAuditRecords(records: CreateAuditRecord[]): Promise<
  */
 export async function queryAuditTrail(filters: AuditQueryFilters = {}): Promise<EventsAudit[]> {
   try {
+    // Demo mode - return empty array
+    if (DEMO_MODE) {
+      console.log("🎭 Demo Mode: Audit trail query (simulated)");
+      return [];
+    }
+
+    if (!supabase) {
+      throw new Error('Supabase client not available');
+    }
+
     let query = supabase
       .from("events_audit")
       .select("*");

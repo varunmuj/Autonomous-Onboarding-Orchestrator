@@ -1,72 +1,67 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { performHealthCheck } from "../../../lib/system-state";
+import { getConfiguration, validateConfiguration } from "../../../lib/config";
 
 export async function GET(): Promise<NextResponse> {
-  const healthCheck: {
-    status: string;
-    timestamp: string;
-    version: string;
-    services: {
-      database: { status: string; responseTime: number; error?: string };
-      n8n: { status: string; responseTime: number; error?: string };
-    };
-  } = {
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-    version: "3.0.0",
-    services: {
-      database: { status: "unknown", responseTime: 0 },
-      n8n: { status: "unknown", responseTime: 0 }
-    }
-  };
-
   try {
-    // Test database connectivity
-    const dbStart = Date.now();
-    const { data, error } = await supabase
-      .from("customers")
-      .select("count")
-      .limit(1);
+    // Get current configuration
+    const config = getConfiguration();
+    const configValidation = validateConfiguration(config);
     
-    const dbResponseTime = Date.now() - dbStart;
+    // Perform system health check
+    const systemHealth = await performHealthCheck();
     
-    if (error) {
-      healthCheck.services.database = {
-        status: "unhealthy",
-        responseTime: dbResponseTime,
-        error: error.message
-      };
-      healthCheck.status = "degraded";
-    } else {
-      healthCheck.services.database = {
-        status: "healthy",
-        responseTime: dbResponseTime
-      };
-    }
+    const healthCheck = {
+      status: "healthy" as "healthy" | "degraded" | "unhealthy",
+      timestamp: new Date().toISOString(),
+      version: "3.0.0",
+      environment: config.environment,
+      configuration: {
+        isValid: configValidation.isValid,
+        errors: configValidation.errors,
+        warnings: configValidation.warnings
+      },
+      services: {
+        database: {
+          status: systemHealth.database ? "healthy" : "unhealthy",
+          dataConsistency: systemHealth.dataConsistency,
+          errors: systemHealth.errors
+        },
+        n8n: {
+          status: "unknown" as "healthy" | "unhealthy" | "unknown" | "not_configured",
+          responseTime: 0,
+          error: undefined as string | undefined
+        }
+      },
+      systemState: {
+        incompleteOperations: systemHealth.incompleteOperations.length,
+        autoRecoveryEnabled: config.features.autoRecovery
+      }
+    };
 
-    // Test n8n connectivity (if configured)
-    if (process.env.N8N_WEBHOOK_URL) {
+    // Test n8n connectivity if configured
+    if (config.n8n.webhookUrl && config.n8n.webhookUrl !== '') {
       try {
         const n8nStart = Date.now();
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), config.n8n.timeout);
         
-        const n8nResponse = await fetch(process.env.N8N_WEBHOOK_URL.replace('/webhook/', '/healthz'), {
+        // Try to reach n8n health endpoint
+        const n8nHealthUrl = config.n8n.webhookUrl.replace('/webhook/', '/healthz');
+        const n8nResponse = await fetch(n8nHealthUrl, {
           method: 'GET',
-          signal: controller.signal
+          signal: controller.signal,
+          headers: config.n8n.apiKey ? { 'Authorization': `Bearer ${config.n8n.apiKey}` } : {}
         });
+        
         clearTimeout(timeoutId);
         const n8nResponseTime = Date.now() - n8nStart;
 
         if (n8nResponse.ok) {
           healthCheck.services.n8n = {
             status: "healthy",
-            responseTime: n8nResponseTime
+            responseTime: n8nResponseTime,
+            error: undefined
           };
         } else {
           healthCheck.services.n8n = {
@@ -87,16 +82,16 @@ export async function GET(): Promise<NextResponse> {
     } else {
       healthCheck.services.n8n = {
         status: "not_configured",
-        responseTime: 0
+        responseTime: 0,
+        error: "N8N_WEBHOOK_URL not configured"
       };
     }
 
     // Determine overall status
-    const hasUnhealthyServices = Object.values(healthCheck.services)
-      .some((service: any) => service.status === "unhealthy");
-    
-    if (hasUnhealthyServices) {
+    if (!systemHealth.database || !systemHealth.dataConsistency || !configValidation.isValid) {
       healthCheck.status = "unhealthy";
+    } else if (healthCheck.services.n8n.status === "unhealthy" || systemHealth.incompleteOperations.length > 0) {
+      healthCheck.status = "degraded";
     }
 
     const statusCode = healthCheck.status === "healthy" ? 200 : 
@@ -110,7 +105,7 @@ export async function GET(): Promise<NextResponse> {
       timestamp: new Date().toISOString(),
       version: "3.0.0",
       error: error.message,
-      services: healthCheck.services
+      configuration: { isValid: false, errors: [error.message], warnings: [] }
     }, { status: 503 });
   }
 }
